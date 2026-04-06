@@ -8,119 +8,117 @@ from flask import Flask
 from google import genai
 from google.genai import types
 
-# --- CONFIGURAZIONE ---
-API_KEY_GOOGLE = os.environ.get("GOOGLE_API_KEY")
+# --- CONFIGURAZIONE MULTI-KEY ---
+# Recuperiamo le 3 chiavi da Render
+CHIAVI_DISPONIBILI = [
+    os.environ.get("GOOGLE_API_KEY"),
+    os.environ.get("GOOGLE_API_KEY_2"),
+    os.environ.get("GOOGLE_API_KEY_3")
+]
+# Filtriamo solo quelle effettivamente inserite
+CHIAVI_VALIDE = [k for k in CHIAVI_DISPONIBILI if k]
+
 TOKEN_TELEGRAM = os.environ.get("TELEGRAM_TOKEN")
+ID_AMMINISTRATORE = 123456789  # <--- METTI IL TUO ID QUI
 
-# INSERISCI QUI IL TUO ID TELEGRAM
-ID_AMMINISTRATORE = 123456789  
+# Inizializziamo i client per ogni chiave
+clients = [genai.Client(api_key=k) for k in CHIAVI_VALIDE]
+indice_chiave_attuale = 0
 
-utenti_noti = set()      
-utenti_bloccati = set()  
-
-client = genai.Client(api_key=API_KEY_GOOGLE)
 bot = telebot.TeleBot(TOKEN_TELEGRAM)
 sessioni_utenti = {}
 
-def crea_nuova_sessione():
+def crea_nuova_sessione(client_scelto):
     config = types.GenerateContentConfig(
         system_instruction="Sei J.A.R.V.I.S. Rispondi in italiano, formale e conciso. Non usare emoji.",
         tools=[types.Tool(google_search=types.GoogleSearch())]
     )
-    # MODELLO STABILE 1.5 FLASH
-    return client.chats.create(model="gemini-2.0-flash", config=config)
+    return client_scelto.chats.create(model="gemini-1.5-flash", config=config)
 
 def ottieni_sessione(chat_id):
+    global indice_chiave_attuale
     if chat_id not in sessioni_utenti:
-        sessioni_utenti[chat_id] = crea_nuova_sessione()
+        client_attuale = clients[indice_chiave_attuale]
+        sessioni_utenti[chat_id] = crea_nuova_sessione(client_attuale)
     return sessioni_utenti[chat_id]
 
 def genera_audio_jarvis(testo, nome_file):
-    # Rimosse indentazioni extra per evitare SyntaxError
     voce = "it-IT-DiegoNeural"
     comunicate = edge_tts.Communicate(testo, voce)
     asyncio.run(comunicate.save(nome_file))
 
-# --- SERVER FLASK ---
+# --- SERVER FLASK PER RENDER ---
 app = Flask(__name__)
 @app.route('/')
-def index(): return "J.A.R.V.I.S. Status: Online"
+def index(): return "J.A.R.V.I.S. Multi-Key: Online"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 threading.Thread(target=run_web, daemon=True).start()
 
-# --- SECURITY CHECK ---
-def verifica_e_notifica(message):
-    chat_id = message.chat.id
-    nome = message.from_user.first_name
-    if chat_id == ID_AMMINISTRATORE: return True
-    if chat_id in utenti_bloccati:
-        bot.send_message(chat_id, "⛔ Accesso negato.")
-        return False
-    if chat_id not in utenti_noti:
-        utenti_noti.add(chat_id)
-        avviso = f"👀 UTENTE RILEVATO: {nome} (ID: `{chat_id}`)\nBlocca: /blocca {chat_id}"
-        bot.send_message(ID_AMMINISTRATORE, avviso)
-    return True
+# --- LOGICA DI ROTAZIONE CHIAVI ---
+def invia_messaggio_con_rotazione(chat_id, messaggio_payload):
+    global indice_chiave_attuale
+    tentativi = 0
+    max_tentativi = len(clients)
 
-# --- ADMIN COMMANDS ---
-@bot.message_handler(commands=['blocca', 'sblocca'])
-def gestisci_admin(message):
-    if message.chat.id != ID_AMMINISTRATORE: return
-    cmd = message.text.split()
-    if len(cmd) < 2: return
-    id_t = int(cmd[1])
-    if cmd[0] == "/blocca":
-        utenti_bloccati.add(id_t)
-        bot.send_message(ID_AMMINISTRATORE, f"🛑 ID {id_t} bloccato.")
-    else:
-        if id_t in utenti_bloccati: utenti_bloccati.remove(id_t)
-        bot.send_message(ID_AMMINISTRATORE, f"✅ ID {id_t} sbloccato.")
+    while tentativi < max_tentativi:
+        try:
+            chat = ottieni_sessione(chat_id)
+            return chat.send_message(messaggio_payload)
+        except Exception as e:
+            if "429" in str(e) or "quota" in str(e).lower():
+                # Chiave esaurita! Passiamo alla prossima
+                indice_chiave_attuale = (indice_chiave_attuale + 1) % len(clients)
+                # Reset della sessione per l'utente con la nuova chiave
+                sessioni_utenti[chat_id] = crea_nuova_sessione(clients[indice_chiave_attuale])
+                tentativi += 1
+                print(f"🔄 Switch alla chiave {indice_chiave_attuale + 1} per l'utente {chat_id}")
+            else:
+                raise e # Errore diverso (es. 404), lo lanciamo per gestirlo dopo
+    
+    raise Exception("Tutte le API Key sono esaurite per oggi.")
 
-# --- CORE LOGIC ---
-@bot.message_handler(commands=['start', 'reset', 'clear'])
+# --- TELEGRAM HANDLERS ---
+@bot.message_handler(commands=['start', 'reset'])
 def welcome(message):
-    if not verifica_e_notifica(message): return
     chat_id = message.chat.id
-    sessioni_utenti[chat_id] = crea_nuova_sessione()
-    bot.send_message(chat_id, "Sistemi J.A.R.V.I.S. ricaricati. Collegamento stabilito.")
+    sessioni_utenti[chat_id] = crea_nuova_sessione(clients[indice_chiave_attuale])
+    bot.send_message(chat_id, "Sistemi J.A.R.V.I.S. ricaricati con Multi-Key. Collegamento stabilito.")
 
 @bot.message_handler(content_types=['text', 'voice', 'audio'])
 def handle_all(message):
-    if not verifica_e_notifica(message): return
     chat_id = message.chat.id
-    chat = ottieni_sessione(chat_id)
-    
     try:
         bot.send_chat_action(chat_id, 'record_voice')
         
+        # Gestione Input (Testo o Audio)
         if message.content_type in ['voice', 'audio']:
             ext = ".ogg" if message.content_type == 'voice' else ".mp3"
             f_info = message.voice if message.content_type == 'voice' else message.audio
             nome_f = f"rec_{chat_id}{ext}"
             with open(nome_f, 'wb') as f:
                 f.write(bot.download_file(bot.get_file(f_info.file_id).file_path))
-            u_file = client.files.upload(file=nome_f)
-            risposta = chat.send_message([u_file, "Rispondi a questo audio."])
+            
+            # Carichiamo il file usando il client attuale
+            u_file = clients[indice_chiave_attuale].files.upload(file=nome_f)
+            risposta = invia_messaggio_con_rotazione(chat_id, [u_file, "Rispondi a questo audio."])
             os.remove(nome_f)
         else:
-            risposta = chat.send_message(message.text)
+            risposta = invia_messaggio_con_rotazione(chat_id, message.text)
 
+        # Generazione Audio Risposta
         txt = risposta.text
         f_voc = f"v_{chat_id}.mp3"
-        genera_audio_jarvis(re.sub(r'```.*?```', '', txt, flags=re.DOTALL).strip() or "Messaggio ricevuto.", f_voc)
+        genera_audio_jarvis(re.sub(r'```.*?```', '', txt, flags=re.DOTALL).strip() or "Ricevuto.", f_voc)
         bot.send_voice(chat_id, open(f_voc, 'rb'), caption=txt[:1000])
         os.remove(f_voc)
 
     except Exception as e:
-        err_msg = str(e)
-        if "429" in err_msg:
-            bot.send_message(chat_id, "⚠️ Limite Google raggiunto. Attendi 60 secondi.")
-        elif "404" in err_msg:
-            bot.send_message(chat_id, "❌ Modello non trovato. Verifica la tua API KEY su Google AI Studio.")
+        if "esaurite" in str(e):
+            bot.send_message(chat_id, "🛑 Protocollo 'Blackout': Tutte le chiavi sono esaurite per oggi.")
         else:
-            bot.send_message(chat_id, f"⚙️ Errore tecnico: {err_msg[:50]}")
+            bot.send_message(chat_id, f"⚠️ Errore: {str(e)[:50]}")
 
 bot.infinity_polling()
