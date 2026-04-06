@@ -1,4 +1,4 @@
-google-genai
 pyTelegramBotAPI
-edge-tts
-Flask
+google-generativeai
+flask
+requests
