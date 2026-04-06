@@ -28,7 +28,7 @@ def crea_nuova_sessione():
         tools=[types.Tool(google_search=types.GoogleSearch())]
     )
     # MODELLO STABILE 1.5 FLASH
-    return client.chats.create(model="models/gemini-1.5-flash", config=config)
+    return client.chats.create(model="gemini-2.0-flash", config=config)
 
 def ottieni_sessione(chat_id):
     if chat_id not in sessioni_utenti:
