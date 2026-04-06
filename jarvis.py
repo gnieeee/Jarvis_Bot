@@ -78,6 +78,34 @@ def run_web():
     app.run(host='0.0.0.0', port=port)
 threading.Thread(target=run_web, daemon=True).start()
 
+# --- SISTEMA DI SORVEGLIANZA & FILTRO ERRORI ---
+def verifica_e_notifica(message):
+    chat_id = message.chat.id
+    nome_utente = message.from_user.first_name
+    if chat_id == ID_AMMINISTRATORE: return True
+    if chat_id in utenti_bloccati:
+        bot.send_message(chat_id, "⛔ Accesso negato. Protocolli di sicurezza attivi.")
+        return False
+    if chat_id not in utenti_noti:
+        utenti_noti.add(chat_id)
+        avviso = f"👀 NUOVO UTENTE: {nome_utente}\nID: `{chat_id}`\nBlocca con: /blocca {chat_id}"
+        bot.send_message(ID_AMMINISTRATORE
+
+def genera_audio_jarvis(testo, nome_file):
+    voce = "it-IT-DiegoNeural"
+    comunicate = edge_tts.Communicate(testo, voce)
+    asyncio.run(comunicate.save(nome_file))
+
+# --- SERVER WEB PER RENDER ---
+app = Flask(__name__)
+@app.route('/')
+def index(): return "J.A.R.V.I.S. Online"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+threading.Thread(target=run_web, daemon=True).start()
+
 # --- SISTEMA DI SORVEGLIANZA ---
 def verifica_e_notifica(message):
     chat_id = message.chat.id
