@@ -28,8 +28,8 @@ def crea_nuova_sessione():
         tools=[types.Tool(google_search=types.GoogleSearch())]
     )
     # PASSAGGIO A GEMINI 1.5 FLASH PER MAGGIORE STABILITÀ
-    return client.chats.create(model="gemini-1.5-flash-latest", config=config)
-
+    return client.chats.create(model="gemini-1.5-flash", config=config)
+    
 def ottieni_sessione(chat_id):
     if chat_id not in sessioni_utenti:
         sessioni_utenti[chat_id] = crea_nuova_sessione()
