@@ -12,10 +12,9 @@ from google.genai import types
 API_KEY_GOOGLE = os.environ.get("GOOGLE_API_KEY")
 TOKEN_TELEGRAM = os.environ.get("TELEGRAM_TOKEN")
 
-# Inserisci qui il TUO ID TELEGRAM (Senza virgolette)
-ID_AMMINISTRATORE = 123456789  
+# INSERISCI QUI IL TUO ID (Senza virgolette)
+ID_AMMINISTRATORE = 1386073388  
 
-# Memoria RAM per la sorveglianza
 utenti_noti = set()      
 utenti_bloccati = set()  
 
@@ -25,15 +24,44 @@ sessioni_utenti = {}
 
 def crea_nuova_sessione():
     config = types.GenerateContentConfig(
-        system_instruction="Sei J.A.R.V.I.S. Rispondi in italiano, formale e conciso. Usa i blocchi codice se necessario. Non usare emoji.",
+        system_instruction="Sei J.A.R.V.I.S. Rispondi in italiano, formale e conciso. Non usare emoji.",
         tools=[types.Tool(google_search=types.GoogleSearch())]
     )
-    return client.chats.create(model="gemini-2.0-flash", config=config)
+    # PASSAGGIO A GEMINI 1.5 FLASH PER MAGGIORE STABILITÀ
+    return client.chats.create(model="gemini-1.5-flash", config=config)
 
 def ottieni_sessione(chat_id):
     if chat_id not in sessioni_utenti:
         sessioni_utenti[chat_id] = crea_nuova_sessione()
     return sessioni_utenti[chat_id]
+
+def genera_audio_jarvis(testo, nome_file):
+    voce = "it-IT-DiegoNeural"
+    comunicate = edge_tts.Communicate(testo, voce)
+    asyncio.run(comunicate.save(nome_file))
+
+# --- SERVER WEB PER RENDER ---
+app = Flask(__name__)
+@app.route('/')
+def index(): return "J.A.R.V.I.S. Online"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+threading.Thread(target=run_web, daemon=True).start()
+
+# --- SISTEMA DI SORVEGLIANZA & FILTRO ERRORI ---
+def verifica_e_notifica(message):
+    chat_id = message.chat.id
+    nome_utente = message.from_user.first_name
+    if chat_id == ID_AMMINISTRATORE: return True
+    if chat_id in utenti_bloccati:
+        bot.send_message(chat_id, "⛔ Accesso negato. Protocolli di sicurezza attivi.")
+        return False
+    if chat_id not in utenti_noti:
+        utenti_noti.add(chat_id)
+        avviso = f"👀 NUOVO UTENTE: {nome_utente}\nID: `{chat_id}`\nBlocca con: /blocca {chat_id}"
+        bot.send_message(ID_AMMINISTRATORE
 
 def genera_audio_jarvis(testo, nome_file):
     voce = "it-IT-DiegoNeural"
