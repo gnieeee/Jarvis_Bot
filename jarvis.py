@@ -34,7 +34,7 @@ def crea_chat(client_scelto):
         tools=[types.Tool(google_search=types.GoogleSearch())]
     )
     # Usiamo il modello 'latest' per la massima compatibilità ed evitare il 404
-    return client_scelto.chats.create(model="models/gemini-1.5-flash", config=config)
+    return client_scelto.chats.create(model="gemini-2.0-flash", config=config)
 
 def chiedi_a_gemini(chat_id, prompt):
     global indice_chiave
