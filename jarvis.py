@@ -33,7 +33,7 @@ def crea_nuova_sessione(client_scelto):
         system_instruction="Sei J.A.R.V.I.S. Rispondi in italiano, formale e conciso. Non usare emoji.",
         tools=[types.Tool(google_search=types.GoogleSearch())]
     )
-    return client_scelto.chats.create(model="models/gemini-1.5-flash", config=config)
+    return client_scelto.chats.create(model="gemini-1.5-flash-latest", config=config)
     
 def ottieni_sessione(chat_id):
     global indice_chiave_attuale
