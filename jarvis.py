@@ -167,7 +167,7 @@ def rispondi_testo(message):
             
             # Pulizia dell'audio per non fargli leggere il codice riga per riga
             testo_da_leggere = re.sub(r'```.*?```', '', testo_risposta, flags=re.DOTALL).strip()
-            if non testo_da_leggere:
+            if not testo_da_leggere:
                 testo_da_leggere = "Ho generato e inviato il file richiesto, Signore."
 
         # Generazione audio della risposta pulita
