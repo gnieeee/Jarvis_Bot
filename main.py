@@ -5,8 +5,8 @@ from flask import Flask, request
 
 # --- SISTEMI CORE ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model = genai.GenerativeModel('gemini-1.5-flash')
+genai.configure(api_key="AIzaSyBigQ2m9Oo7M8n5GVVBErxO-gn2y0OQObM")
+model = genai.GenerativeModel('gemini-1.0-flash')
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
