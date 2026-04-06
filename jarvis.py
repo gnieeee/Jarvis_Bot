@@ -7,20 +7,21 @@ from flask import Flask
 from google import genai
 from google.genai import types
 
-# 1. LETTURA CHIAVI DAL CLOUD
+# 1. CONFIGURAZIONE CHIAVI
 API_KEY_GOOGLE = os.environ.get("GOOGLE_API_KEY")
 TOKEN_TELEGRAM = os.environ.get("TELEGRAM_TOKEN")
 
-# Inizializzazione
 client = genai.Client(api_key=API_KEY_GOOGLE)
 bot = telebot.TeleBot(TOKEN_TELEGRAM)
 
+# Istruzioni di sistema aggiornate per gestire anche l'udito
 config = types.GenerateContentConfig(
-    system_instruction="Da ora in poi sei J.A.R.V.I.S. Rispondi in italiano in modo formale e conciso. Non usare emoji o asterischi.",
+    system_instruction="""Sei J.A.R.V.I.S. Rispondi in italiano, formale e conciso. 
+    Se nell'audio o nel testo l'utente ti chiede esplicitamente di 'trascrivere', fornisci il testo integrale di ciò che è stato detto. 
+    Altrimenti, rispondi al contenuto del messaggio in modo intelligente. Non usare emoji o formattazioni strane.""",
     tools=[types.Tool(google_search=types.GoogleSearch())]
 )
 
-# Questa è la sessione di chat che ricorderà la cronologia
 chat = client.chats.create(model="gemini-2.5-flash", config=config)
 
 def genera_audio_jarvis(testo, nome_file):
@@ -28,86 +29,93 @@ def genera_audio_jarvis(testo, nome_file):
     comunicate = edge_tts.Communicate(testo, voce)
     asyncio.run(comunicate.save(nome_file))
 
-# --- IL TRUCCO PER RENDER (Dummy Web Server) ---
+# --- SERVER WEB PER RENDER ---
 app = Flask(__name__)
-
 @app.route('/')
-def index():
-    return "J.A.R.V.I.S. Sistemi Online. Server Operativo."
+def index(): return "J.A.R.V.I.S. Online"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
 threading.Thread(target=run_web, daemon=True).start()
-# -----------------------------------------------
 
-# --- NUOVO MODULO: GESTIONE DEI DOCUMENTI ---
-@bot.message_handler(content_types=['document'])
-def gestisci_documento(message):
+# --- NUOVO MODULO: UDITO (GESTIONE VOCALI) ---
+@bot.message_handler(content_types=['voice'])
+def gestisci_vocale(message):
     chat_id = message.chat.id
-    try:
-        bot.send_message(chat_id, "Documento ricevuto, Signore. Download in corso...")
-        
-        # 1. Scarica il file da Telegram
-        file_info = bot.get_file(message.document.file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        nome_file = message.document.file_name
-        
-        # Salva temporaneamente il file sul server Render
-        with open(nome_file, 'wb') as new_file:
-            new_file.write(downloaded_file)
-            
-        bot.send_message(chat_id, "Lettura e analisi dei dati completata. Elaborazione riassunto...")
-        
-        # 2. Carica il file su Google Gemini
-        file_caricato = client.files.upload(file=nome_file)
-        
-        # 3. Chiedi a Jarvis di presentare il file
-        prompt = f"Ho appena caricato il file {nome_file}. Fammi un riassunto formale, brillante e conciso del suo contenuto per capire di cosa tratta, poi chiedimi se voglio approfondire qualche capitolo o concetto in particolare."
-        risposta = chat.send_message([file_caricato, prompt])
-        testo_pulito = risposta.text
-        
-        # 4. Genera e invia l'audio
-        file_audio = f"risposta_doc_{chat_id}.mp3"
-        genera_audio_jarvis(testo_pulito, file_audio)
-        
-        with open(file_audio, 'rb') as audio:
-            bot.send_voice(chat_id, audio, caption=testo_pulito)
-            
-        # 5. Pulizia di sistema (Vitale per non intasare il server)
-        os.remove(nome_file)
-        os.remove(file_audio)
-        
-    except Exception as e:
-        bot.send_message(chat_id, f"Mi scusi Signore, c'è stato un errore nell'analisi del documento: {e}")
-
-# --- MODULO CLASSICO: MESSAGGI DI TESTO ---
-@bot.message_handler(func=lambda message: True)
-def rispondi_a_messaggio(message):
-    comando_utente = message.text
-    chat_id = message.chat.id
-    
+    nome_vocale = f"vocale_{chat_id}.ogg"
     try:
         bot.send_chat_action(chat_id, 'record_voice')
         
-        risposta = chat.send_message(comando_utente)
-        testo_pulito = risposta.text
-        
-        file_audio = f"risposta_{chat_id}.mp3"
-        genera_audio_jarvis(testo_pulito, file_audio)
-        
-        with open(file_audio, 'rb') as audio:
-            bot.send_voice(chat_id, audio, caption=testo_pulito)
+        # 1. Scarica il vocale da Telegram
+        file_info = bot.get_file(message.voice.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        with open(nome_vocale, 'wb') as f:
+            f.write(downloaded_file)
             
-        os.remove(file_audio)
+        # 2. Carica l'audio su Google Gemini
+        # Gemini supporta nativamente il formato .ogg di Telegram
+        audio_caricato = client.files.upload(file=nome_vocale)
+        
+        # 3. Chiedi a Gemini di ascoltare e rispondere
+        risposta = chat.send_message([audio_caricato, "Ascolta questo audio e rispondi secondo le tue istruzioni di sistema."])
+        testo_risposta = risposta.text
+        
+        # 4. Genera risposta audio (o solo testo se è una trascrizione lunga)
+        print(f"Jarvis ha ascoltato: {testo_risposta}")
+        
+        file_risposta_audio = f"jarvis_voce_{chat_id}.mp3"
+        genera_audio_jarvis(testo_risposta, file_risposta_audio)
+        
+        with open(file_risposta_audio, 'rb') as audio:
+            bot.send_voice(chat_id, audio, caption=testo_risposta)
+            
+        # 5. Pulizia
+        os.remove(nome_vocale)
+        os.remove(file_risposta_audio)
         
     except Exception as e:
-        bot.send_message(chat_id, f"Mi scusi Signore, errore di sistema: {e}")
+        bot.send_message(chat_id, f"Signore, ho avuto difficoltà ad ascoltare il messaggio: {e}")
+        if os.path.exists(nome_vocale): os.remove(nome_vocale)
 
-print("-" * 50)
-print("SISTEMA J.A.R.V.I.S. IN ASCOLTO SU TELEGRAM E SUL WEB...")
-print("-" * 50)
+# --- MODULO DOCUMENTI ---
+@bot.message_handler(content_types=['document'])
+def gestisci_documento(message):
+    chat_id = message.chat.id
+    nome_file = message.document.file_name
+    try:
+        file_info = bot.get_file(message.document.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        with open(nome_file, 'wb') as f: f.write(downloaded_file)
+        
+        file_caricato = client.files.upload(file=nome_file)
+        risposta = chat.send_message([file_caricato, f"Analizza il file {nome_file} e riassumilo."])
+        
+        file_audio = f"risposta_doc_{chat_id}.mp3"
+        genera_audio_jarvis(risposta.text, file_audio)
+        with open(file_audio, 'rb') as audio:
+            bot.send_voice(chat_id, audio, caption=risposta.text)
+        
+        os.remove(nome_file)
+        os.remove(file_audio)
+    except Exception as e:
+        bot.send_message(chat_id, f"Errore analisi documento: {e}")
 
-# Avviamo il bot
+# --- MODULO TESTO ---
+@bot.message_handler(func=lambda message: True)
+def rispondi_testo(message):
+    chat_id = message.chat.id
+    try:
+        bot.send_chat_action(chat_id, 'record_voice')
+        risposta = chat.send_message(message.text)
+        file_audio = f"risposta_{chat_id}.mp3"
+        genera_audio_jarvis(risposta.text, file_audio)
+        with open(file_audio, 'rb') as audio:
+            bot.send_voice(chat_id, audio, caption=risposta.text)
+        os.remove(file_audio)
+    except Exception as e:
+        bot.send_message(chat_id, f"Errore: {e}")
+
+print("J.A.R.V.I.S. ONLINE")
 bot.infinity_polling()
