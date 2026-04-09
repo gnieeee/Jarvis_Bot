@@ -1,7 +1,6 @@
 import os
 import telebot
 import requests
-import json
 from flask import Flask, request
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -10,36 +9,28 @@ app = Flask(__name__)
 
 def chiedi_a_jarvis(prompt):
     try:
-        # Usiamo il modello search per navigazione reale 2026
-        url = f"https://text.pollinations.ai/{prompt}?model=search&system=Sei%20JARVIS.%20Oggi%20è%20il%209%20Aprile%202026.%20Rispondi%20solo%20con%20il%20testo%20finale%20in%20italiano."
-        response = requests.get(url, timeout=30)
+        # Passiamo al modello 'openai' che è il più compatibile, 
+        # chiedendo esplicitamente dati aggiornati nel prompt
+        url = f"https://text.pollinations.ai/{prompt}?model=openai&system=Sei%20JARVIS.%20Oggi%20è%20il%209%20Aprile%202026.%20Fornisci%20informazioni%20aggiornate%20sullo%20sport%20e%20sulle%20partite.%20Rispondi%20solo%20in%20italiano."
+        response = requests.get(url, timeout=20)
         
-        testo_grezzo = response.text
-        
-        # Se il server ci manda un JSON tecnico, proviamo a estrarre solo il messaggio
-        try:
-            dati = json.loads(testo_grezzo)
-            if 'choices' in dati:
-                return dati['choices'][0]['message']['content']
-            elif 'content' in dati:
-                return dati['content']
-        except:
-            # Se non è un JSON, puliamo il testo da eventuali residui di codice
-            return testo_grezzo.split('"content":')[-1].replace('}', '').replace('"', '').strip()
-            
-        return testo_grezzo
+        if response.status_code == 200:
+            return response.text
+        else:
+            # Se l'API ha problemi, proviamo il modello 'mistral' come backup
+            url_backup = f"https://text.pollinations.ai/{prompt}?model=mistral"
+            return requests.get(url_backup, timeout=20).text
     except:
-        return "Sistemi in ricalibrazione, Signore. La connessione web è instabile."
+        return "Sistemi in ricalibrazione, Signore. Il server gratuito è sotto pressione."
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "J.A.R.V.I.S. Online. Protocolli di pulizia dati attivati. Come posso aiutarla?")
+    bot.reply_to(message, "J.A.R.V.I.S. Online. Protocollo Flux attivato. Come posso aiutarla?")
 
 @bot.message_handler(func=lambda m: True)
 def chat(message):
     bot.send_chat_action(message.chat.id, 'typing')
-    risposta = chiedi_a_jarvis(message.text)
-    bot.reply_to(message, risposta)
+    bot.reply_to(message, chiedi_a_jarvis(message.text))
 
 @app.route('/' + TOKEN, methods=['POST'])
 def getMessage():
