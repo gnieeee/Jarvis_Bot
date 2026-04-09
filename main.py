@@ -18,9 +18,9 @@ def chiedi_a_jarvis(prompt):
     # Endpoint 2: Search Optimized (Per news e attualità)
     # Endpoint 3: Mistral (Backup stabile)
     motori = [
-        f"https://text.pollinations.ai/{prompt}?model=openai&system=Sei%20JARVIS%20assistente%20di%20Stark.%20Rispondi%20formale%20in%20italiano.",
-        f"https://text.pollinations.ai/{prompt}?model=search",
-        f"https://text.pollinations.ai/{prompt}?model=mistral"
+    f"https://text.pollinations.ai/{prompt}?model=openai&system=Sei%20JARVIS.%20Rispondi%20formale.%20Se%20non%20conosci%20una%20risposta%20o%20non%20hai%20dati%20reali%20aggiornati,%20ammettilo%20e%20non%20inventare%20mai%20nomi%20o%20date.",
+    f"https://text.pollinations.ai/{prompt}?model=search",
+    f"https://text.pollinations.ai/{prompt}?model=mistral"
     ]
     
     for url in motori:
