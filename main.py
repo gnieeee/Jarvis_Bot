@@ -8,48 +8,45 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-def ricerca_web_reale(query):
+def ricerca_web_veloce(query):
+    """Cerca su Google e restituisce il testo pulito immediatamente"""
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'}
-        # Aggiungiamo '2026' alla query per forzare Google
         url = f"https://www.google.com/search?q={query.replace(' ', '+')}+2026"
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Cerchiamo di prendere gli snippet più rilevanti
+        # Estraiamo i dati principali (snippet di Google)
         snippets = soup.find_all(['span', 'div'], class_=['VwiC3b', 'MUwY0b', 'lyLwCc'])
-        info = " ".join([s.get_text() for s in snippets[:3]])
-        return info if len(info) > 20 else None
+        info = ". ".join([s.get_text() for s in snippets[:2]])
+        return info if len(info) > 10 else "Nessun dato trovato."
     except:
-        return None
+        return "Errore di connessione ai satelliti."
 
-def chiedi_a_jarvis(prompt):
-    info_web = ricerca_web_reale(prompt)
-    
-    # Se abbiamo trovato dati reali, li passiamo all'IA con un ordine perentorio
-    try:
-        if info_web:
-            system_msg = "Sei JARVIS. USA QUESTI DATI PER RISPONDERE ORA: " + info_web
-        else:
-            system_msg = "Sei JARVIS, l'assistente di Tony Stark. Rispondi in modo formale."
-
-        url = f"https://text.pollinations.ai/{prompt}?model=openai&system={system_msg.replace(' ', '%20')}"
-        risposta = requests.get(url, timeout=20).text
-        
-        # Se l'IA continua a scusarsi nonostante i dati, forziamo l'output dei dati grezzi
-        if "Mi dispiace" in risposta or "non ho accesso" in risposta:
-            if info_web:
-                return f"Signore, i database riportano quanto segue: {info_web}"
-        
-        return risposta
-    except:
-        return "Sistemi offline. Riprovi, Signore."
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.reply_to(message, "J.A.R.V.I.S. Online. Protocollo di emergenza attivo. Sono pronto, Signore.")
 
 @bot.message_handler(func=lambda m: True)
 def chat(message):
     bot.send_chat_action(message.chat.id, 'typing')
-    bot.reply_to(message, chiedi_a_jarvis(message.text))
+    testo = message.text.lower()
+    
+    # Se chiedi news, sport o meteo, J.A.R.V.I.S. risponde DIRETTAMENTE con Google
+    if any(k in testo for k in ["quando", "partita", "sinner", "milan", "risultato", "chi gioca"]):
+        dati = ricerca_web_veloce(message.text)
+        risposta = f"**Rapporto Satellitare 9 Aprile 2026:**\n\n{dati}\n\nSpero che queste informazioni le siano utili, Signore."
+        bot.reply_to(message, risposta, parse_mode="Markdown")
+    else:
+        # Per la chat normale, usiamo un endpoint di backup molto più leggero
+        try:
+            url = f"https://text.pollinations.ai/{message.text}?model=mistral&system=Rispondi%20formale"
+            res = requests.get(url, timeout=10).text
+            bot.reply_to(message, res)
+        except:
+            bot.reply_to(message, "I sistemi neurali sono in attesa. Mi chieda pure delle ricerche web, quelle sono operative.")
 
+# --- SERVER WEBHOOK (Identico) ---
 @app.route('/' + TOKEN, methods=['POST'])
 def getMessage():
     bot.process_new_updates([telebot.types.Update.de_json(request.get_data().decode('utf-8'))])
