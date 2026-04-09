@@ -1,32 +1,51 @@
 import os
 import telebot
-import google.generativeai as genai
+import requests
 from flask import Flask, request
 
-# --- SISTEMI CORE ---
+# --- CONFIGURAZIONE ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model = genai.GenerativeModel('gemini-1.0-pro')
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# --- RISPOSTA IA ---
-def genera_risposta(testo):
+# --- FUNZIONE IA (Utilizza API Gratuite Aperte) ---
+def chiedi_a_jarvis(prompt):
     try:
-        prompt = f"Sei J.A.R.V.I.S., assistente di Tony Stark. Rispondi in modo formale e conciso. Utente: {testo}"
-        return model.generate_content(prompt).text
+        # Usiamo un endpoint gratuito che non richiede chiavi API
+        url = f"https://text.pollinations.ai/{prompt}?model=openai"
+        response = requests.get(url, timeout=15)
+        return response.text
     except:
-        return "Sistemi critici, Signore. Verifichi la chiave neurale (API Key) su Render."
+        return "Sistemi in sovraccarico, Signore. Sto ricalibrando i server gratuiti."
 
-# --- COMANDI BOT ---
+# --- FUNZIONE IMMAGINI (Gratis) ---
+def genera_immagine(descrizione):
+    return f"https://image.pollinations.ai/prompt/{descrizione.replace(' ', '%20')}"
+
+# --- GESTIONE MESSAGGI ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "Sistemi online, Signore. Come posso servirla?")
+    bot.reply_to(message, "J.A.R.V.I.S. Online. Sistemi gratuiti attivati. Come posso servirla?")
+
+@bot.message_handler(content_types=['document'])
+def handle_docs(message):
+    bot.reply_to(message, "Analisi file in corso...")
+    file_info = bot.get_file(message.document.file_id)
+    downloaded_file = bot.download_file(file_info.file_path)
+    testo_file = downloaded_file.decode('utf-8') # Funziona per .txt, .py, .csv
+    risposta = chiedi_a_jarvis(f"Analizza questo codice o file e lavoralo: {testo_file}")
+    bot.reply_to(message, risposta)
+
+@bot.message_handler(func=lambda m: m.text.startswith('/imm'))
+def img_gen(message):
+    prompt = message.text.replace('/imm', '')
+    bot.send_photo(message.chat.id, genera_immagine(prompt))
 
 @bot.message_handler(func=lambda m: True)
 def chat(message):
     bot.send_chat_action(message.chat.id, 'typing')
-    bot.reply_to(message, genera_risposta(message.text))
+    risposta = chiedi_a_jarvis(message.text)
+    bot.reply_to(message, risposta)
 
 # --- SERVER WEBHOOK ---
 @app.route('/' + TOKEN, methods=['POST'])
@@ -38,7 +57,7 @@ def getMessage():
 def webhook():
     bot.remove_webhook()
     bot.set_webhook(url='https://' + os.getenv("RENDER_EXTERNAL_HOSTNAME") + '/' + TOKEN)
-    return "J.A.R.V.I.S. ONLINE", 200
+    return "ONLINE", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 8080)))
