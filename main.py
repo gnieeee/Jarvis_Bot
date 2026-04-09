@@ -10,39 +10,40 @@ app = Flask(__name__)
 
 def ricerca_web_reale(query):
     try:
-        # Headers potenziati per sembrare un vero computer Stark
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'}
-        url = f"https://www.google.com/search?q={query}+date+2026"
+        # Aggiungiamo '2026' alla query per forzare Google
+        url = f"https://www.google.com/search?q={query.replace(' ', '+')}+2026"
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Cerchiamo nei vari snippet di Google
+        # Cerchiamo di prendere gli snippet più rilevanti
         snippets = soup.find_all(['span', 'div'], class_=['VwiC3b', 'MUwY0b', 'lyLwCc'])
-        testo = " ".join([s.get_text() for s in snippets[:5]])
-        
-        return testo if len(testo) > 10 else "Nessun dato live disponibile."
+        info = " ".join([s.get_text() for s in snippets[:3]])
+        return info if len(info) > 20 else None
     except:
-        return "Errore di scansione satellitare."
+        return None
 
 def chiedi_a_jarvis(prompt):
-    # Attivazione automatica ricerca per parole chiave
-    keywords = ["quando", "partita", "sinner", "milan", "meteo", "risultato", "serie a"]
-    info_web = ""
+    info_web = ricerca_web_reale(prompt)
     
-    if any(k in prompt.lower() for k in keywords):
-        info_web = ricerca_web_reale(prompt)
-
+    # Se abbiamo trovato dati reali, li passiamo all'IA con un ordine perentorio
     try:
-        # Il prompt ora obbliga l'IA a usare i dati trovati
-        context = f"DATA ATTUALE: 9 Aprile 2026. DATI REALI DAL WEB: {info_web}. DOMANDA: {prompt}"
-        url = f"https://text.pollinations.ai/{context}?model=openai&system=Sei%20JARVIS.%20Usa%20i%20DATI%20REALI%20per%20dare%20date%20e%20orari%20precisi.%20Non%20inventare%20nulla."
-        return requests.get(url, timeout=20).text
-    except:
-        return "Sistemi offline, Signore."
+        if info_web:
+            system_msg = "Sei JARVIS. USA QUESTI DATI PER RISPONDERE ORA: " + info_web
+        else:
+            system_msg = "Sei JARVIS, l'assistente di Tony Stark. Rispondi in modo formale."
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.reply_to(message, "Protocolli 2026 attivi, Signore. La ricerca web è operativa.")
+        url = f"https://text.pollinations.ai/{prompt}?model=openai&system={system_msg.replace(' ', '%20')}"
+        risposta = requests.get(url, timeout=20).text
+        
+        # Se l'IA continua a scusarsi nonostante i dati, forziamo l'output dei dati grezzi
+        if "Mi dispiace" in risposta or "non ho accesso" in risposta:
+            if info_web:
+                return f"Signore, i database riportano quanto segue: {info_web}"
+        
+        return risposta
+    except:
+        return "Sistemi offline. Riprovi, Signore."
 
 @bot.message_handler(func=lambda m: True)
 def chat(message):
